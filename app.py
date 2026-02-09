@@ -8,8 +8,9 @@ Run with: streamlit run app.py
 
 import streamlit as st
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from predict_color import ColorPredictor
+from sklearn.cluster import KMeans
 import os
 
 # Page configuration
@@ -69,6 +70,127 @@ def load_model():
     if predictor.load_model():
         return predictor
     return None
+
+def extract_dominant_colors(image, num_colors=5):
+    """
+    Extract dominant colors from an image using K-means clustering.
+    
+    Args:
+        image: PIL Image object
+        num_colors: Number of dominant colors to extract
+        
+    Returns:
+        list of tuples: [(r, g, b, percentage), ...]
+    """
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Resize for faster processing
+    img = image.copy()
+    img.thumbnail((300, 300))
+    
+    # Convert to numpy array and reshape
+    img_array = np.array(img)
+    pixels = img_array.reshape(-1, 3)
+    
+    # Remove very dark pixels (likely background)
+    mask = pixels.sum(axis=1) > 30
+    pixels = pixels[mask]
+    
+    # Apply K-means clustering
+    kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init=10)
+    kmeans.fit(pixels)
+    
+    # Get cluster centers (dominant colors)
+    colors = kmeans.cluster_centers_.astype(int)
+    
+    # Count pixels in each cluster to get percentages
+    labels = kmeans.labels_
+    counts = np.bincount(labels)
+    percentages = counts / len(labels) * 100
+    
+    # Sort by percentage (most dominant first)
+    sorted_indices = np.argsort(-percentages)
+    
+    results = []
+    for idx in sorted_indices:
+        r, g, b = colors[idx]
+        percentage = percentages[idx]
+        results.append((int(r), int(g), int(b), float(percentage)))
+    
+    return results
+
+def annotate_image_with_colors(image, dominant_colors, predictor):
+    """
+    Annotate image with color labels and markers.
+    
+    Args:
+        image: PIL Image object
+        dominant_colors: List of (r, g, b, percentage) tuples
+        predictor: ColorPredictor instance
+        
+    Returns:
+        PIL Image: Annotated image
+    """
+    # Create a copy to draw on
+    img_annotated = image.copy()
+    draw = ImageDraw.Draw(img_annotated)
+    
+    # Get image dimensions
+    width, height = img_annotated.size
+    
+    # Try to load a font, fallback to default if not available
+    try:
+        font_large = ImageFont.truetype("arial.ttf", 40)
+        font_small = ImageFont.truetype("arial.ttf", 25)
+    except:
+        font_large = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+    
+    # Create color palette on the right side
+    palette_width = 300
+    color_height = height // len(dominant_colors)
+    
+    for i, (r, g, b, percentage) in enumerate(dominant_colors):
+        # Predict color name
+        color_name, confidence = predictor.predict_with_confidence(r, g, b)
+        
+        # Draw color box on the right side
+        x1 = width - palette_width
+        y1 = i * color_height
+        x2 = width
+        y2 = (i + 1) * color_height
+        
+        # Draw the color box
+        draw.rectangle([x1, y1, x2, y2], fill=(r, g, b))
+        
+        # Add border
+        draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 255), width=3)
+        
+        # Determine text color (white or black) based on background brightness
+        brightness = (r * 299 + g * 587 + b * 114) / 1000
+        text_color = (0, 0, 0) if brightness > 128 else (255, 255, 255)
+        
+        # Draw color name
+        text_y = y1 + color_height // 2 - 30
+        draw.text((x1 + 10, text_y), color_name.upper(), fill=text_color, font=font_large)
+        
+        # Draw RGB values
+        rgb_text = f"RGB({r}, {g}, {b})"
+        draw.text((x1 + 10, text_y + 45), rgb_text, fill=text_color, font=font_small)
+        
+        # Draw percentage
+        pct_text = f"{percentage:.1f}% of image"
+        draw.text((x1 + 10, text_y + 75), pct_text, fill=text_color, font=font_small)
+    
+    # Add title banner at top
+    banner_height = 60
+    draw.rectangle([0, 0, width, banner_height], fill=(0, 0, 0, 200))
+    title_text = f"🎨 {len(dominant_colors)} Dominant Colors Detected"
+    draw.text((20, 15), title_text, fill=(255, 255, 255), font=font_large)
+    
+    return img_annotated
 
 # Initialize predictor
 if st.session_state.predictor is None:
@@ -206,59 +328,91 @@ elif mode == "📷 Upload Image":
     if uploaded_file is not None:
         # Read image
         image = Image.open(uploaded_file)
-        img_array = np.array(image)
         
-        col1, col2 = st.columns(2)
+        st.markdown("---")
         
-        with col1:
-            st.image(image, caption="Uploaded Image", width='stretch')
-            
-            # Option to select detection area
-            detection_mode = st.radio(
-                "Pixel Selection:",
-                ["Center Pixel", "Average Color", "Click to Select"]
+        # Option to select number of colors
+        col_setting1, col_setting2 = st.columns(2)
+        
+        with col_setting1:
+            num_colors = st.slider("Number of colors to detect:", 2, 10, 5)
+        
+        with col_setting2:
+            analysis_mode = st.radio(
+                "Analysis Mode:",
+                ["🎨 Dominant Colors (Annotated)", "📊 Color Palette Only"],
+                horizontal=True
             )
         
-        with col2:
-            if detection_mode == "Center Pixel":
-                # Get center pixel
-                h, w = img_array.shape[:2]
-                center_pixel = img_array[h//2, w//2]
+        if st.button("🔍 Analyze Colors", key="analyze_btn"):
+            with st.spinner(f'Analyzing {num_colors} dominant colors...'):
+                # Extract dominant colors
+                dominant_colors = extract_dominant_colors(image, num_colors)
+                st.session_state.image_analysis = {
+                    'original': image,
+                    'colors': dominant_colors,
+                    'mode': analysis_mode
+                }
+        
+        # Display results
+        if 'image_analysis' in st.session_state:
+            results = st.session_state.image_analysis
+            
+            st.markdown("---")
+            
+            if results['mode'] == "🎨 Dominant Colors (Annotated)":
+                st.subheader("🖼️ Annotated Image")
                 
-                if len(center_pixel) >= 3:
-                    r, g, b = int(center_pixel[0]), int(center_pixel[1]), int(center_pixel[2])
-                else:
-                    st.error("Image must be in RGB format")
-                    st.stop()
+                # Create annotated image
+                annotated_img = annotate_image_with_colors(
+                    results['original'],
+                    results['colors'],
+                    st.session_state.predictor
+                )
                 
-            elif detection_mode == "Average Color":
-                # Calculate average color
-                avg_color = img_array.mean(axis=(0, 1))
-                r, g, b = int(avg_color[0]), int(avg_color[1]), int(avg_color[2])
+                # Display annotated image
+                st.image(annotated_img, caption="Image with Color Labels", width='stretch')
+                
+                # Add download button
+                # Convert to bytes for download
+                from io import BytesIO
+                buf = BytesIO()
+                annotated_img.save(buf, format='PNG')
+                buf.seek(0)
+                
+                st.download_button(
+                    label="⬇️ Download Annotated Image",
+                    data=buf,
+                    file_name="color_analysis.png",
+                    mime="image/png"
+                )
             
-            else:
-                st.info("Click mode coming soon! Using center pixel for now.")
-                h, w = img_array.shape[:2]
-                center_pixel = img_array[h//2, w//2]
-                r, g, b = int(center_pixel[0]), int(center_pixel[1]), int(center_pixel[2])
-            
-            # Predict
-            color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
-            
-            # Display result
-            st.markdown(f"""
-            <div class="color-box" style="background-color: rgb({r}, {g}, {b});">
-                <div style="background-color: rgba(255,255,255,0.9); padding: 20px; border-radius: 10px;">
-                    <p class="prediction-text" style="color: rgb({r}, {g}, {b});">
-                        {color_name.upper()}
-                    </p>
-                    <p class="confidence-text">
-                        Confidence: {confidence*100:.1f}%
-                    </p>
-                    <p style="color: #666;">RGB({r}, {g}, {b})</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            else:  # Color Palette Only
+                st.subheader("🎨 Color Palette")
+                
+                cols = st.columns(2)
+                
+                with cols[0]:
+                    st.image(results['original'], caption="Original Image", width='stretch')
+                
+                with cols[1]:
+                    st.write("### Detected Colors")
+                    
+                    for i, (r, g, b, percentage) in enumerate(results['colors'], 1):
+                        color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
+                        
+                        st.markdown(f"""
+                        <div class="color-box" style="background-color: rgb({r}, {g}, {b}); margin: 10px 0; padding: 15px;">
+                            <div style="background-color: rgba(255,255,255,0.95); padding: 15px; border-radius: 8px;">
+                                <h3 style="color: rgb({r}, {g}, {b}); margin: 0;">#{i} {color_name.upper()}</h3>
+                                <p style="color: #666; margin: 5px 0;">RGB({r}, {g}, {b})</p>
+                                <p style="color: #666; margin: 5px 0;">Coverage: {percentage:.1f}%</p>
+                                <p style="color: #666; margin: 5px 0;">Confidence: {confidence*100:.1f}%</p>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+        else:
+            st.info("👆 Upload an image and click 'Analyze Colors' to detect dominant colors")
 
 # Mode 4: Manual RGB Input
 elif mode == "🔢 Manual RGB Input":
