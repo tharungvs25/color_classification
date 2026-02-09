@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from predict_color import ColorPredictor
 from sklearn.cluster import KMeans
+import cv2
 import os
 
 # Page configuration
@@ -192,6 +193,171 @@ def annotate_image_with_colors(image, dominant_colors, predictor):
     
     return img_annotated
 
+def get_color_ranges():
+    """
+    Define HSV color ranges for different colors.
+    Returns a dictionary of color names and their HSV ranges.
+    """
+    color_ranges = {
+        'Red': [
+            (np.array([0, 100, 100]), np.array([10, 255, 255])),
+            (np.array([160, 100, 100]), np.array([180, 255, 255]))  # Red wraps around
+        ],
+        'Green': [(np.array([35, 50, 50]), np.array([85, 255, 255]))],
+        'Blue': [(np.array([90, 50, 50]), np.array([130, 255, 255]))],
+        'Yellow': [(np.array([20, 100, 100]), np.array([35, 255, 255]))],
+        'Orange': [(np.array([10, 100, 100]), np.array([20, 255, 255]))],
+        'Purple': [(np.array([130, 50, 50]), np.array([160, 255, 255]))],
+        'Pink': [(np.array([145, 50, 50]), np.array([170, 255, 255]))],
+        'Cyan': [(np.array([85, 50, 50]), np.array([95, 255, 255]))],
+        'White': [(np.array([0, 0, 200]), np.array([180, 30, 255]))],
+        'Black': [(np.array([0, 0, 0]), np.array([180, 255, 50]))],
+        'Gray': [(np.array([0, 0, 50]), np.array([180, 30, 200]))],
+        'Brown': [(np.array([10, 100, 20]), np.array([20, 255, 200]))],
+    }
+    return color_ranges
+
+def detect_color_regions(image, target_colors=None, min_area=500):
+    """
+    Detect regions of specific colors in an image.
+    
+    Args:
+        image: PIL Image object
+        target_colors: List of color names to detect (None = detect all)
+        min_area: Minimum contour area to consider
+        
+    Returns:
+        List of detected regions with color, contour, and bounding box
+    """
+    # Convert PIL to OpenCV format
+    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    img_hsv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2HSV)
+    
+    color_ranges = get_color_ranges()
+    
+    # Filter by target colors if specified
+    if target_colors:
+        color_ranges = {k: v for k, v in color_ranges.items() if k in target_colors}
+    
+    detected_regions = []
+    
+    for color_name, ranges in color_ranges.items():
+        # Create mask for this color
+        mask = np.zeros(img_hsv.shape[:2], dtype=np.uint8)
+        
+        for lower, upper in ranges:
+            color_mask = cv2.inRange(img_hsv, lower, upper)
+            mask = cv2.bitwise_or(mask, color_mask)
+        
+        # Clean up the mask
+        kernel = np.ones((5, 5), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            
+            if area > min_area:
+                # Get bounding box
+                x, y, w, h = cv2.boundingRect(contour)
+                
+                detected_regions.append({
+                    'color': color_name,
+                    'contour': contour,
+                    'bbox': (x, y, w, h),
+                    'area': area
+                })
+    
+    return detected_regions
+
+def draw_color_boundaries(image, detected_regions):
+    """
+    Draw boundaries and labels for detected color regions.
+    
+    Args:
+        image: PIL Image object
+        detected_regions: List of detected regions
+        
+    Returns:
+        PIL Image with boundaries drawn
+    """
+    # Convert PIL to OpenCV
+    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    
+    # Try to load font
+    try:
+        font = ImageFont.truetype("arial.ttf", 30)
+    except:
+        font = ImageFont.load_default()
+    
+    # Group regions by color for numbering
+    color_counts = {}
+    
+    for region in detected_regions:
+        color_name = region['color']
+        x, y, w, h = region['bbox']
+        contour = region['contour']
+        
+        # Count occurrences of each color
+        if color_name not in color_counts:
+            color_counts[color_name] = 0
+        color_counts[color_name] += 1
+        
+        # Choose color for boundary (contrasting colors)
+        boundary_colors = {
+            'Red': (255, 0, 0),
+            'Green': (0, 255, 0),
+            'Blue': (0, 0, 255),
+            'Yellow': (255, 255, 0),
+            'Orange': (255, 165, 0),
+            'Purple': (128, 0, 128),
+            'Pink': (255, 192, 203),
+            'Cyan': (0, 255, 255),
+            'White': (255, 255, 255),
+            'Black': (0, 0, 0),
+            'Gray': (128, 128, 128),
+            'Brown': (165, 42, 42),
+        }
+        
+        boundary_color = boundary_colors.get(color_name, (0, 255, 0))
+        
+        # Draw contour
+        cv2.drawContours(img_cv, [contour], -1, boundary_color, 3)
+        
+        # Draw bounding box
+        cv2.rectangle(img_cv, (x, y), (x + w, y + h), boundary_color, 2)
+        
+        # Prepare label
+        label = f"{color_name} #{color_counts[color_name]}"
+        
+        # Calculate label position (above the bounding box)
+        label_y = max(y - 10, 30)
+        
+        # Draw label background
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
+        cv2.rectangle(img_cv, 
+                     (x, label_y - text_size[1] - 10),
+                     (x + text_size[0] + 10, label_y + 5),
+                     boundary_color, -1)
+        
+        # Draw label text
+        text_color = (255, 255, 255) if color_name in ['Red', 'Blue', 'Purple', 'Black', 'Brown'] else (0, 0, 0)
+        cv2.putText(img_cv, label, (x + 5, label_y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, text_color, 2)
+        
+        # Draw area info
+        area_text = f"{region['area']:.0f} px²"
+        cv2.putText(img_cv, area_text, (x + 5, y + h - 10),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, boundary_color, 2)
+    
+    # Convert back to PIL
+    img_with_boundaries = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
+    
+    return img_with_boundaries
+
 # Initialize predictor
 if st.session_state.predictor is None:
     with st.spinner('Loading AI model...'):
@@ -340,19 +506,66 @@ elif mode == "📷 Upload Image":
         with col_setting2:
             analysis_mode = st.radio(
                 "Analysis Mode:",
-                ["🎨 Dominant Colors (Annotated)", "📊 Color Palette Only"],
-                horizontal=True
+                ["🎨 Dominant Colors", "🔍 Color Boundary Detection", "📊 Color Palette"],
+                horizontal=False
             )
         
-        if st.button("🔍 Analyze Colors", key="analyze_btn"):
-            with st.spinner(f'Analyzing {num_colors} dominant colors...'):
-                # Extract dominant colors
-                dominant_colors = extract_dominant_colors(image, num_colors)
-                st.session_state.image_analysis = {
-                    'original': image,
-                    'colors': dominant_colors,
-                    'mode': analysis_mode
-                }
+        # Additional settings for boundary detection
+        selected_colors = None
+        min_area = 500
+        
+        if analysis_mode == "🔍 Color Boundary Detection":
+            st.markdown("**Select colors to detect:**")
+            
+            col_a, col_b, col_c = st.columns(3)
+            selected_colors = []
+            
+            with col_a:
+                if st.checkbox('Red', value=False, key='chk_red'): selected_colors.append('Red')
+                if st.checkbox('Green', value=True, key='chk_green'): selected_colors.append('Green')
+                if st.checkbox('Blue', value=False, key='chk_blue'): selected_colors.append('Blue')
+                if st.checkbox('Yellow', value=False, key='chk_yellow'): selected_colors.append('Yellow')
+            
+            with col_b:
+                if st.checkbox('Orange', value=False, key='chk_orange'): selected_colors.append('Orange')
+                if st.checkbox('Purple', value=False, key='chk_purple'): selected_colors.append('Purple')
+                if st.checkbox('Pink', value=False, key='chk_pink'): selected_colors.append('Pink')
+                if st.checkbox('Cyan', value=False, key='chk_cyan'): selected_colors.append('Cyan')
+            
+            with col_c:
+                if st.checkbox('White', value=False, key='chk_white'): selected_colors.append('White')
+                if st.checkbox('Black', value=False, key='chk_black'): selected_colors.append('Black')
+                if st.checkbox('Gray', value=False, key='chk_gray'): selected_colors.append('Gray')
+                if st.checkbox('Brown', value=False, key='chk_brown'): selected_colors.append('Brown')
+            
+            min_area = st.slider("Minimum region size (pixels²):", 100, 5000, 500, 100)
+        
+        # Analyze button
+        button_label = "🔍 Detect Boundaries" if analysis_mode == "🔍 Color Boundary Detection" else "🔍 Analyze Colors"
+        
+        if st.button(button_label, key="analyze_btn"):
+            if analysis_mode == "🔍 Color Boundary Detection":
+                if not selected_colors:
+                    st.warning("⚠️ Please select at least one color to detect!")
+                else:
+                    with st.spinner(f'Detecting {", ".join(selected_colors)} regions...'):
+                        # Detect color regions
+                        detected_regions = detect_color_regions(image, selected_colors, min_area)
+                        st.session_state.image_analysis = {
+                            'original': image,
+                            'mode': analysis_mode,
+                            'regions': detected_regions,
+                            'selected_colors': selected_colors
+                        }
+            else:
+                with st.spinner(f'Analyzing {num_colors} dominant colors...'):
+                    # Extract dominant colors
+                    dominant_colors = extract_dominant_colors(image, num_colors)
+                    st.session_state.image_analysis = {
+                        'original': image,
+                        'colors': dominant_colors,
+                        'mode': analysis_mode
+                    }
         
         # Display results
         if 'image_analysis' in st.session_state:
@@ -360,7 +573,7 @@ elif mode == "📷 Upload Image":
             
             st.markdown("---")
             
-            if results['mode'] == "🎨 Dominant Colors (Annotated)":
+            if results['mode'] == "🎨 Dominant Colors":
                 st.subheader("🖼️ Annotated Image")
                 
                 # Create annotated image
@@ -374,7 +587,6 @@ elif mode == "📷 Upload Image":
                 st.image(annotated_img, caption="Image with Color Labels", width='stretch')
                 
                 # Add download button
-                # Convert to bytes for download
                 from io import BytesIO
                 buf = BytesIO()
                 annotated_img.save(buf, format='PNG')
@@ -387,7 +599,72 @@ elif mode == "📷 Upload Image":
                     mime="image/png"
                 )
             
-            else:  # Color Palette Only
+            elif results['mode'] == "🔍 Color Boundary Detection":
+                st.subheader("🔍 Color Boundary Detection Results")
+                
+                detected_regions = results.get('regions', [])
+                
+                if detected_regions:
+                    # Draw boundaries on image
+                    boundary_img = draw_color_boundaries(results['original'], detected_regions)
+                    
+                    # Display image with boundaries
+                    st.image(boundary_img, caption="Detected Color Regions", width='stretch')
+                    
+                    # Summary statistics
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Total Regions", len(detected_regions))
+                    
+                    with col2:
+                        unique_colors = len(set([r['color'] for r in detected_regions]))
+                        st.metric("Colors Found", unique_colors)
+                    
+                    with col3:
+                        total_area = sum([r['area'] for r in detected_regions])
+                        st.metric("Total Area", f"{total_area:.0f} px²")
+                    
+                    # Detailed breakdown
+                    st.markdown("### Detected Regions Details")
+                    
+                    # Group by color
+                    color_groups = {}
+                    for region in detected_regions:
+                        color = region['color']
+                        if color not in color_groups:
+                            color_groups[color] = []
+                        color_groups[color].append(region)
+                    
+                    for color, regions in color_groups.items():
+                        with st.expander(f"🎨 {color} - {len(regions)} region(s)"):
+                            for i, region in enumerate(regions, 1):
+                                x, y, w, h = region['bbox']
+                                st.write(f"**Region #{i}**")
+                                st.write(f"- Position: ({x}, {y})")
+                                st.write(f"- Size: {w} × {h} pixels")
+                                st.write(f"- Area: {region['area']:.0f} px²")
+                                st.markdown("---")
+                    
+                    # Download button
+                    from io import BytesIO
+                    buf = BytesIO()
+                    boundary_img.save(buf, format='PNG')
+                    buf.seek(0)
+                    
+                    st.download_button(
+                        label="⬇️ Download Boundary Detection Image",
+                        data=buf,
+                        file_name="color_boundaries.png",
+                        mime="image/png"
+                    )
+                else:
+                    st.warning(f"⚠️ No {', '.join(results.get('selected_colors', []))} regions found. Try:")
+                    st.write("- Selecting different colors")
+                    st.write("- Reducing minimum region size")
+                    st.write("- Using an image with more distinct colors")
+            
+            else:  # Color Palette
                 st.subheader("🎨 Color Palette")
                 
                 cols = st.columns(2)
@@ -412,7 +689,7 @@ elif mode == "📷 Upload Image":
                         </div>
                         """, unsafe_allow_html=True)
         else:
-            st.info("👆 Upload an image and click 'Analyze Colors' to detect dominant colors")
+            st.info("👆 Upload an image and click the analyze button to start")
 
 # Mode 4: Manual RGB Input
 elif mode == "🔢 Manual RGB Input":
