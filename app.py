@@ -11,8 +11,10 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from predict_color import ColorPredictor
 from sklearn.cluster import KMeans
+from mixed_reality import MixedRealityColorDetector, create_grid_points
 import cv2
 import os
+import time
 
 # Page configuration
 st.set_page_config(
@@ -380,7 +382,7 @@ with st.sidebar:
     
     mode = st.radio(
         "Choose Input Mode:",
-        ["🎨 Color Picker", "🎛️ RGB Sliders", "📷 Upload Image", "🔢 Manual RGB Input"],
+        ["🎨 Color Picker", "🎛️ RGB Sliders", "📷 Upload Image", "🔢 Manual RGB Input", "🥽 Mixed Reality AR"],
         index=0
     )
     
@@ -732,6 +734,176 @@ elif mode == "🔢 Manual RGB Input":
             """, unsafe_allow_html=True)
         else:
             st.info("👆 Enter RGB values and click Predict to see results")
+
+# Mode 5: Mixed Reality AR
+elif mode == "🥽 Mixed Reality AR":
+    st.subheader("🥽 Mixed Reality Color Detection")
+    st.markdown("**Real-time AR-style color detection using your webcam**")
+    
+    # Detection settings
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        detection_mode = st.radio(
+            "Detection Mode:",
+            ["📍 Center Point", "🎯 Grid (3x3)", "🔍 Boundary Detection"],
+            key="mr_mode"
+        )
+    
+    with col2:
+        show_ar_overlay = st.checkbox("Show AR Overlay", value=True, key="mr_overlay")
+        show_grid = st.checkbox("Show Grid", value=True, key="mr_grid")
+    
+    # Boundary detection settings
+    if detection_mode == "🔍 Boundary Detection":
+        st.markdown("**Select colors to detect:**")
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            detect_red = st.checkbox("Red", value=False, key="mr_red")
+            detect_green = st.checkbox("Green", value=True, key="mr_green")
+        
+        with col_b:
+            detect_blue = st.checkbox("Blue", value=False, key="mr_blue")
+            detect_yellow = st.checkbox("Yellow", value=False, key="mr_yellow")
+        
+        boundary_colors = []
+        if detect_red: boundary_colors.append('Red')
+        if detect_green: boundary_colors.append('Green')
+        if detect_blue: boundary_colors.append('Blue')
+        if detect_yellow: boundary_colors.append('Yellow')
+    else:
+        boundary_colors = None
+    
+    st.markdown("---")
+    
+    # Camera controls
+    col_start, col_stop, col_snapshot = st.columns(3)
+    
+    with col_start:
+        start_camera = st.button("📹 Start Camera", key="start_mr")
+    
+    with col_stop:
+        stop_camera = st.button("⏹️ Stop Camera", key="stop_mr")
+    
+    with col_snapshot:
+        take_snapshot = st.button("📸 Take Snapshot", key="snapshot_mr")
+    
+    # Initialize MR detector
+    if 'mr_detector' not in st.session_state:
+        st.session_state.mr_detector = MixedRealityColorDetector(st.session_state.predictor)
+    
+    # Camera state
+    if 'camera_active' not in st.session_state:
+        st.session_state.camera_active = False
+    
+    if start_camera:
+        st.session_state.camera_active = True
+    
+    if stop_camera:
+        st.session_state.camera_active = False
+    
+    # Display area
+    stframe = st.empty()
+    
+    if st.session_state.camera_active:
+        # Open webcam
+        cap = cv2.VideoCapture(0)
+        
+        if not cap.isOpened():
+            st.error("❌ Cannot access camera. Please check permissions.")
+            st.session_state.camera_active = False
+        else:
+            st.info("🎥 Camera is active. Point at objects to detect colors!")
+            
+            # Process frames
+            frame_count = 0
+            max_frames = 300  # Process for ~10 seconds at 30fps
+            
+            while st.session_state.camera_active and frame_count < max_frames:
+                ret, frame = cap.read()
+                
+                if not ret:
+                    st.warning("⚠️ Failed to read from camera")
+                    break
+                
+                # Create detection points based on mode
+                if detection_mode == "📍 Center Point":
+                    height, width = frame.shape[:2]
+                    detection_points = [(width // 2, height // 2)]
+                elif detection_mode == "🎯 Grid (3x3)":
+                    height, width = frame.shape[:2]
+                    detection_points = create_grid_points(width, height, 3)
+                else:
+                    detection_points = None
+                
+                # Process frame with AR overlay
+                processed_frame = st.session_state.mr_detector.process_frame(
+                    frame,
+                    detection_points,
+                    detection_mode == "🔍 Boundary Detection",
+                    boundary_colors
+                )
+                
+                # Convert BGR to RGB for display
+                rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                
+                # Display frame
+                stframe.image(rgb_frame, channels="RGB", use_column_width=True)
+                
+                # Save snapshot
+                if take_snapshot:
+                    snapshot_path = f"screenshots/mr_snapshot_{int(time.time())}.png"
+                    os.makedirs("screenshots", exist_ok=True)
+                    cv2.imwrite(snapshot_path, processed_frame)
+                    st.success(f"📸 Snapshot saved: {snapshot_path}")
+                
+                frame_count += 1
+                
+                # Small delay to control frame rate
+                time.sleep(0.033)  # ~30 FPS
+            
+            # Release camera
+            cap.release()
+            
+            if frame_count >= max_frames:
+                st.info("🔄 Session ended. Click 'Start Camera' to continue.")
+                st.session_state.camera_active = False
+    else:
+        # Show instructions
+        st.markdown("""
+        ### 📋 Instructions:
+        
+        1. **Click 'Start Camera'** to activate your webcam
+        2. **Point** your camera at objects you want to identify
+        3. **Colors will be detected** in real-time with AR overlays
+        4. **Take snapshots** to save interesting detections
+        
+        ### 🎮 Detection Modes:
+        
+        - **📍 Center Point**: Detect color at screen center
+        - **🎯 Grid (3x3)**: Detect colors at 9 grid points
+        - **🔍 Boundary Detection**: Find and outline specific color regions
+        
+        ### 🎨 AR Features:
+        
+        - Real-time color name display
+        - RGB values overlay
+        - Confidence scores
+        - FPS counter
+        - Grid overlay for alignment
+        - Boundary highlighting for specific colors
+        
+        ### ⚡ Tips:
+        
+        - Ensure good lighting for better detection
+        - Hold camera steady for clear results
+        - Use Boundary Detection to find specific colors in complex scenes
+        """)
+        
+        # Show demo image
+        st.image("https://via.placeholder.com/800x450/4CAF50/FFFFFF?text=Mixed+Reality+Color+Detection", 
+                caption="Mixed Reality AR Mode - Point camera at objects to detect colors")
 
 # Footer
 st.markdown("---")
