@@ -844,10 +844,23 @@ elif mode == "🥽 Mixed Reality AR":
             
             return img
     
-    # WebRTC Configuration for better connectivity
+    # WebRTC Configuration with multiple STUN servers for better connectivity
     rtc_configuration = RTCConfiguration(
-        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+        {"iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]},
+            {"urls": ["stun:stun3.l.google.com:19302"]},
+            {"urls": ["stun:stun4.l.google.com:19302"]},
+        ]}
     )
+    
+    st.info("""
+    ⏳ **First time setup may take 10-30 seconds**
+    - Allow camera permissions when prompted
+    - Wait for the connection to establish
+    - If it takes too long, try refreshing the page
+    """)
     
     # Start webcam stream
     webrtc_ctx = webrtc_streamer(
@@ -859,6 +872,29 @@ elif mode == "🥽 Mixed Reality AR":
     )
     
     st.markdown("---")
+    
+    # Troubleshooting section
+    with st.expander("🔧 Troubleshooting Connection Issues"):
+        st.markdown("""
+        **If the camera connection is taking too long:**
+        
+        1. **Refresh the page** - Sometimes a fresh start helps
+        2. **Check browser permissions** - Make sure your browser has camera access
+        3. **Try a different browser** - Chrome and Edge work best
+        4. **Check your network** - Firewall or corporate network may block WebRTC
+        5. **Use a different mode** - Try the "Upload Image" mode as an alternative
+        
+        **Supported browsers:**
+        - ✅ Google Chrome (Recommended)
+        - ✅ Microsoft Edge
+        - ✅ Firefox
+        - ⚠️ Safari (may have limited support)
+        
+        **If issues persist:**
+        - The other 4 modes (Color Picker, RGB Sliders, Upload Image, Manual Input) work perfectly!
+        - Download and run locally: `streamlit run app.py` for guaranteed camera access
+        """)
+    
     st.markdown("""
     ### 🎮 How It Works:
     - **Crosshair**: Shows the detection point (center of frame)
