@@ -60,11 +60,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'predictor' not in st.session_state:
-    st.session_state.predictor = None
-    st.session_state.model_loaded = False
-
 # Load model function
 @st.cache_resource
 def load_model():
@@ -73,6 +68,9 @@ def load_model():
     if predictor.load_model():
         return predictor
     return None
+
+# Get predictor (cached)
+predictor = load_model()
 
 def extract_dominant_colors(image, num_colors=5):
     """
@@ -360,23 +358,12 @@ def draw_color_boundaries(image, detected_regions):
     
     return img_with_boundaries
 
-# Initialize predictor
-if st.session_state.predictor is None:
-    with st.spinner('Loading AI model...'):
-        st.session_state.predictor = load_model()
-
-# Update model_loaded flag based on predictor state
-if st.session_state.predictor is not None:
-    st.session_state.model_loaded = True
-else:
-    st.session_state.model_loaded = False
-
 # Header
 st.markdown('<h1 class="main-header">🎨 Color Classification AI</h1>', unsafe_allow_html=True)
 st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Predict color names from RGB values using Machine Learning</p>', unsafe_allow_html=True)
 
 # Check if model is loaded
-if not st.session_state.model_loaded:
+if predictor is None or not predictor.is_loaded:
     st.error("❌ Failed to load the trained model!")
     st.info("""
     **The trained model files couldn't be loaded.**  
@@ -400,7 +387,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("📊 Model Info")
-    st.info(f"**Available Colors:** {len(st.session_state.predictor.get_available_colors())}")
+    st.info(f"**Available Colors:** {len(predictor.get_available_colors())}")
     st.success("**Model:** Random Forest")
     st.success("**Accuracy:** 95.92%")
     
@@ -409,7 +396,7 @@ with st.sidebar:
     st.write("This AI model was trained on RGB color data to predict human-readable color names.")
     
     with st.expander("📋 Available Colors"):
-        colors = st.session_state.predictor.get_available_colors()
+        colors = predictor.get_available_colors()
         for i in range(0, len(colors), 2):
             col1, col2 = st.columns(2)
             with col1:
@@ -440,7 +427,7 @@ if mode == "🎨 Color Picker":
         
         if st.button("🔍 Predict Color", key="predict_picker"):
             with st.spinner('Analyzing color...'):
-                color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
+                color_name, confidence = predictor.predict_with_confidence(r, g, b)
                 st.session_state.last_prediction = {
                     'name': color_name,
                     'confidence': confidence,
@@ -478,7 +465,7 @@ elif mode == "🎛️ RGB Sliders":
         b = st.slider("🔵 Blue", 0, 255, 0, key="b_slider")
         
         # Auto-predict on slider change
-        color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
+        color_name, confidence = predictor.predict_with_confidence(r, g, b)
         
         st.markdown("---")
         st.write("**Current RGB:**")
@@ -594,7 +581,7 @@ elif mode == "📷 Upload Image":
                 annotated_img = annotate_image_with_colors(
                     results['original'],
                     results['colors'],
-                    st.session_state.predictor
+                    predictor
                 )
                 
                 # Display annotated image
@@ -690,7 +677,7 @@ elif mode == "📷 Upload Image":
                     st.write("### Detected Colors")
                     
                     for i, (r, g, b, percentage) in enumerate(results['colors'], 1):
-                        color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
+                        color_name, confidence = predictor.predict_with_confidence(r, g, b)
                         
                         st.markdown(f"""
                         <div class="color-box" style="background-color: rgb({r}, {g}, {b}); margin: 10px 0; padding: 15px;">
@@ -720,7 +707,7 @@ elif mode == "🔢 Manual RGB Input":
             submitted = st.form_submit_button("🔍 Predict Color")
             
             if submitted:
-                color_name, confidence = st.session_state.predictor.predict_with_confidence(r, g, b)
+                color_name, confidence = predictor.predict_with_confidence(r, g, b)
                 st.session_state.manual_prediction = {
                     'name': color_name,
                     'confidence': confidence,
@@ -803,7 +790,7 @@ elif mode == "🥽 Mixed Reality AR":
     
     # Initialize MR detector
     if 'mr_detector' not in st.session_state:
-        st.session_state.mr_detector = MixedRealityColorDetector(st.session_state.predictor)
+        st.session_state.mr_detector = MixedRealityColorDetector(predictor)
     
     # Camera state
     if 'camera_active' not in st.session_state:
