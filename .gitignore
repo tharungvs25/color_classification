@@ -36,15 +36,8 @@ ENV/
 *.swo
 *~
 
-# Generated files
-preprocessed_data/
-models/
+# Generated files (keep model and preprocessed data for deployment)
 screenshots/
-*.pkl
-*.npy
-*.png
-*.jpg
-*.jpeg
 
 # Dataset
 color_dataset.csv
