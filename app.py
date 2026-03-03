@@ -900,14 +900,19 @@ elif mode == "🥽 Mixed Reality AR":
     - If it takes too long, try refreshing the page
     """)
     
-    # Start webcam stream
-    webrtc_ctx = webrtc_streamer(
-        key="color-detection",
-        video_transformer_factory=ColorDetectionTransformer,
-        rtc_configuration=rtc_configuration,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,
-    )
+    # Start webcam stream with error handling
+    try:
+        webrtc_ctx = webrtc_streamer(
+            key="color-detection",
+            video_transformer_factory=ColorDetectionTransformer,
+            rtc_configuration=rtc_configuration,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True,
+        )
+    except Exception as e:
+        st.error(f"⚠️ Failed to initialize camera: {str(e)}")
+        st.info("Try refreshing the page or use the **Upload Image** mode as an alternative.")
+        webrtc_ctx = None
     
     st.markdown("---")
     
