@@ -415,11 +415,24 @@ if not predictor.is_loaded:
 with st.sidebar:
     st.header("⚙️ Settings")
     
+    # Detect if running on Streamlit Cloud
+    import socket
+    hostname = socket.gethostname()
+    is_cloud = 'streamlit' in hostname.lower() or os.getenv('STREAMLIT_RUNTIME_ENV') == 'cloud'
+    
+    # Prepare mode options
+    mode_options = ["🎨 Color Picker", "🎛️ RGB Sliders", "📷 Upload Image", "🔢 Manual RGB Input"]
+    if not is_cloud:
+        mode_options.append("🥽 Mixed Reality AR")
+    
     mode = st.radio(
         "Choose Input Mode:",
-        ["🎨 Color Picker", "🎛️ RGB Sliders", "📷 Upload Image", "🔢 Manual RGB Input", "🥽 Mixed Reality AR"],
+        mode_options,
         index=0
     )
+    
+    if is_cloud:
+        st.caption("ℹ️ Mixed Reality AR mode is only available when running locally.")
     
     st.markdown("---")
     st.subheader("📊 Model Info")
