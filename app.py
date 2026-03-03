@@ -777,12 +777,50 @@ elif mode == "🥽 Mixed Reality AR":
     st.subheader("🥽 Mixed Reality Color Detection")
     st.markdown("**Real-time AR-style color detection using your webcam**")
     
+    # Check if running on Streamlit Cloud
+    import socket
+    hostname = socket.gethostname()
+    is_streamlit_cloud = 'streamlit' in hostname.lower() or os.getenv('STREAMLIT_RUNTIME_ENV') == 'cloud'
+    
+    if is_streamlit_cloud:
+        st.warning("""
+        ⚠️ **WebRTC Camera Access May Not Work on Streamlit Cloud**
+        
+        Due to network restrictions and firewall configurations, live camera streaming often fails on cloud deployments.
+        """)
+        
+        st.info("""
+        ✅ **Recommended Alternatives:**
+        
+        **Option 1: Use "📷 Upload Image" mode**
+        - Upload a photo to detect dominant colors
+        - Works perfectly on Streamlit Cloud
+        - Provides similar color analysis
+        
+        **Option 2: Run locally for guaranteed camera access**
+        ```bash
+        git clone https://github.com/tharungvs25/color_classification.git
+        cd color_classification
+        pip install -r requirements.txt
+        streamlit run app.py
+        ```
+        
+        **Option 3: Try anyway (may work on some networks)**
+        - Click START below and wait 30 seconds
+        - If connection fails, use Upload Image mode instead
+        """)
+        
+        if not st.checkbox("⚠️ I understand - Try WebRTC anyway", key="acknowledge_webrtc"):
+            st.stop()
+        
+        st.markdown("---")
+    
     st.info("""
     📹 **How to use:**
     1. Click "START" below to activate your camera
     2. Allow camera permissions when your browser asks
-    3. Point your camera at objects to detect colors in real-time
-    4. The center point color will be detected and labeled
+    3. Wait up to 30 seconds for connection
+    4. Point your camera at objects to detect colors in real-time
     """)
     
     # Video transformer class
