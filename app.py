@@ -69,52 +69,10 @@ if 'predictor' not in st.session_state:
 @st.cache_resource
 def load_model():
     """Load the trained model and encoder."""
-    import os
-    import sys
-    from io import StringIO
-    
-    # Debug: Check current directory and files
-    cwd = os.getcwd()
-    st.write(f"🔍 Debug - Current directory: {cwd}")
-    st.write(f"🔍 Debug - Files in current directory: {os.listdir(cwd)}")
-    
-    model_path = 'models/random_forest_color_classifier.pkl'
-    encoder_path = 'preprocessed_data/label_encoder.pkl'
-    
-    st.write(f"🔍 Debug - Checking model path: {model_path}")
-    st.write(f"🔍 Debug - Model exists: {os.path.exists(model_path)}")
-    st.write(f"🔍 Debug - Encoder exists: {os.path.exists(encoder_path)}")
-    
-    if os.path.exists('models'):
-        st.write(f"🔍 Debug - Files in models/: {os.listdir('models')}")
-    if os.path.exists('preprocessed_data'):
-        st.write(f"🔍 Debug - Files in preprocessed_data/: {os.listdir('preprocessed_data')}")
-    
-    # Capture print output
-    old_stdout = sys.stdout
-    sys.stdout = captured_output = StringIO()
-    
     predictor = ColorPredictor()
-    result = predictor.load_model()
-    
-    # Restore stdout and get captured output
-    sys.stdout = old_stdout
-    output = captured_output.getvalue()
-    
-    # Display captured output
-    if output:
-        st.text("📄 Model loading output:")
-        st.code(output)
-    
-    st.write(f"🔍 Debug - Load result: {result}")
-    st.write(f"🔍 Debug - Predictor is_loaded: {predictor.is_loaded}")
-    
-    if result:
-        st.success("✅ Model loaded successfully!")
+    if predictor.load_model():
         return predictor
-    else:
-        st.error("❌ Failed to load model!")
-        return None
+    return None
 
 def extract_dominant_colors(image, num_colors=5):
     """
@@ -406,8 +364,12 @@ def draw_color_boundaries(image, detected_regions):
 if st.session_state.predictor is None:
     with st.spinner('Loading AI model...'):
         st.session_state.predictor = load_model()
-        if st.session_state.predictor is not None:
-            st.session_state.model_loaded = True
+
+# Update model_loaded flag based on predictor state
+if st.session_state.predictor is not None:
+    st.session_state.model_loaded = True
+else:
+    st.session_state.model_loaded = False
 
 # Header
 st.markdown('<h1 class="main-header">🎨 Color Classification AI</h1>', unsafe_allow_html=True)
@@ -415,13 +377,14 @@ st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Pred
 
 # Check if model is loaded
 if not st.session_state.model_loaded:
-    st.error("❌ Model not loaded!")
-    st.warning("The trained model files are required but couldn't be loaded.")
+    st.error("❌ Failed to load the trained model!")
     st.info("""
-    **Possible solutions:**
-    1. Make sure `models/` and `preprocessed_data/` directories are in the repository
-    2. Check the debug information above
-    3. Try restarting the Streamlit app
+    **The trained model files couldn't be loaded.**  
+    This typically happens if the model files are missing from the deployment.
+    
+    Please check that:
+    - `models/random_forest_color_classifier.pkl` exists
+    - `preprocessed_data/label_encoder.pkl` exists
     """)
     st.stop()
 

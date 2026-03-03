@@ -66,9 +66,7 @@ class ColorPredictor:
             return True
             
         except Exception as e:
-            import traceback
             print(f"❌ Error loading model: {e}")
-            print(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
     def predict_color(self, r: int, g: int, b: int) -> str:
