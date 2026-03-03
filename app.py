@@ -70,6 +70,9 @@ if 'predictor' not in st.session_state:
 def load_model():
     """Load the trained model and encoder."""
     import os
+    import sys
+    from io import StringIO
+    
     # Debug: Check current directory and files
     cwd = os.getcwd()
     st.write(f"🔍 Debug - Current directory: {cwd}")
@@ -87,10 +90,31 @@ def load_model():
     if os.path.exists('preprocessed_data'):
         st.write(f"🔍 Debug - Files in preprocessed_data/: {os.listdir('preprocessed_data')}")
     
+    # Capture print output
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = StringIO()
+    
     predictor = ColorPredictor()
-    if predictor.load_model():
+    result = predictor.load_model()
+    
+    # Restore stdout and get captured output
+    sys.stdout = old_stdout
+    output = captured_output.getvalue()
+    
+    # Display captured output
+    if output:
+        st.text("📄 Model loading output:")
+        st.code(output)
+    
+    st.write(f"🔍 Debug - Load result: {result}")
+    st.write(f"🔍 Debug - Predictor is_loaded: {predictor.is_loaded}")
+    
+    if result:
+        st.success("✅ Model loaded successfully!")
         return predictor
-    return None
+    else:
+        st.error("❌ Failed to load model!")
+        return None
 
 def extract_dominant_colors(image, num_colors=5):
     """
