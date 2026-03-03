@@ -64,10 +64,36 @@ st.markdown("""
 @st.cache_resource
 def load_model():
     """Load the trained model and encoder."""
-    predictor = ColorPredictor()
-    if predictor.load_model():
-        return predictor
-    return None
+    import sys
+    from io import StringIO
+    
+    # Capture output
+    old_stdout = sys.stdout
+    sys.stdout = output_capture = StringIO()
+    
+    try:
+        predictor = ColorPredictor()
+        success = predictor.load_model()
+        
+        # Restore stdout
+        sys.stdout = old_stdout
+        output = output_capture.getvalue()
+        
+        # Log output in debug mode
+        if output:
+            print("Model loading output:", output)
+        
+        if success and predictor.is_loaded:
+            return predictor
+        else:
+            print(f"Model loading failed: success={success}, is_loaded={predictor.is_loaded if predictor else 'N/A'}")
+            return None
+    except Exception as e:
+        sys.stdout = old_stdout
+        print(f"Exception during model loading: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 # Get predictor (cached)
 predictor = load_model()
@@ -363,16 +389,26 @@ st.markdown('<h1 class="main-header">🎨 Color Classification AI</h1>', unsafe_
 st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Predict color names from RGB values using Machine Learning</p>', unsafe_allow_html=True)
 
 # Check if model is loaded
-if predictor is None or not predictor.is_loaded:
+if predictor is None:
     st.error("❌ Failed to load the trained model!")
-    st.info("""
-    **The trained model files couldn't be loaded.**  
-    This typically happens if the model files are missing from the deployment.
+    st.warning("The predictor object is None - model loading returned failure.")
     
-    Please check that:
-    - `models/random_forest_color_classifier.pkl` exists
-    - `preprocessed_data/label_encoder.pkl` exists
+    # Show debugging info
+    import os
+    st.info(f"""
+    **Debug Information:**
+    - Current directory: `{os.getcwd()}`
+    - Model file exists: `{os.path.exists('models/random_forest_color_classifier.pkl')}`
+    - Encoder file exists: `{os.path.exists('preprocessed_data/label_encoder.pkl')}`
+    
+    Check the logs for error details.
     """)
+    st.stop()
+
+if not predictor.is_loaded:
+    st.error("❌ Model loaded but not marked as ready!")
+    st.warning("The predictor was created but is_loaded flag is False.")
+    st.info("This might indicate an issue during the model initialization. Check the server logs.")
     st.stop()
 
 # Sidebar
