@@ -69,6 +69,24 @@ if 'predictor' not in st.session_state:
 @st.cache_resource
 def load_model():
     """Load the trained model and encoder."""
+    import os
+    # Debug: Check current directory and files
+    cwd = os.getcwd()
+    st.write(f"🔍 Debug - Current directory: {cwd}")
+    st.write(f"🔍 Debug - Files in current directory: {os.listdir(cwd)}")
+    
+    model_path = 'models/random_forest_color_classifier.pkl'
+    encoder_path = 'preprocessed_data/label_encoder.pkl'
+    
+    st.write(f"🔍 Debug - Checking model path: {model_path}")
+    st.write(f"🔍 Debug - Model exists: {os.path.exists(model_path)}")
+    st.write(f"🔍 Debug - Encoder exists: {os.path.exists(encoder_path)}")
+    
+    if os.path.exists('models'):
+        st.write(f"🔍 Debug - Files in models/: {os.listdir('models')}")
+    if os.path.exists('preprocessed_data'):
+        st.write(f"🔍 Debug - Files in preprocessed_data/: {os.listdir('preprocessed_data')}")
+    
     predictor = ColorPredictor()
     if predictor.load_model():
         return predictor
@@ -373,7 +391,14 @@ st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Pred
 
 # Check if model is loaded
 if not st.session_state.model_loaded:
-    st.error("❌ Model not loaded! Please run `python train_model.py` first.")
+    st.error("❌ Model not loaded!")
+    st.warning("The trained model files are required but couldn't be loaded.")
+    st.info("""
+    **Possible solutions:**
+    1. Make sure `models/` and `preprocessed_data/` directories are in the repository
+    2. Check the debug information above
+    3. Try restarting the Streamlit app
+    """)
     st.stop()
 
 # Sidebar
